@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Helmet Detection</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link
+    href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="icon" type="image/png" href="favicon.png">
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+</head>
+
+<body>
+
+  <!-- HEADER -->
+  <header>
+    <div class="logo">
+      <div class="logo-icon"><i data-lucide="shield-check" style="width:16px;height:16px"></i></div>
+      Helmet Detection
+    </div>
+    <div class="header-divider"></div>
+    <span class="header-tag">YOLOv8</span>
+    <div class="header-right">
+      <div class="status-bar" style="margin-right:12px">
+        <div class="status-dot" id="ws-dot" style="background:#4ade80"></div>
+        <span class="status-label" id="ws-label">Online</span>
+      </div>
+      <div class="lang-toggle" onclick="toggleLang()"
+        style="cursor:pointer; display:flex; align-items:center; gap:6px; font-size:11px; font-weight:600; color:var(--muted); padding:4px 8px; border:1px solid var(--border); border-radius:6px; margin-right:8px;">
+        <span id="lang-label">EN</span>
+        <i data-lucide="languages" style="width:14px;height:14px"></i>
+      </div>
+    </div>
+  </header>
+
+
+  <div class="workspace">
+
+    <!-- SIDEBAR -->
+    <aside>
+      <div class="sidebar-section">
+        <div class="sidebar-label">Detection</div>
+        <div class="nav-item active" onclick="switchPanel('image', this)">
+          <span class="nav-icon"><i data-lucide="image"></i></span> Image
+        </div>
+        <div class="nav-item" onclick="switchPanel('url', this)">
+          <span class="nav-icon"><i data-lucide="link"></i></span> Image URL
+        </div>
+        <div class="nav-item" onclick="switchPanel('video', this)">
+          <span class="nav-icon"><i data-lucide="video"></i></span> Video
+        </div>
+        <div class="nav-item" onclick="switchPanel('webcam', this)">
+          <span class="nav-icon"><i data-lucide="camera"></i></span> Webcam
+          <span class="nav-badge">live</span>
+        </div>
+      </div>
+      <hr class="sidebar-divider">
+      <div class="sidebar-section">
+        <div class="sidebar-label">Reference</div>
+        <div class="nav-item" onclick="window.open('/docs','_blank')">
+          <span class="nav-icon"><i data-lucide="file-text"></i></span> Swagger UI
+        </div>
+        <div class="nav-item" onclick="window.open('/redoc','_blank')">
+          <span class="nav-icon"><i data-lucide="book-open"></i></span> ReDoc
+        </div>
+      </div>
+    </aside>
+
+    <!-- MAIN -->
+    <main>
+
+      <!-- ── IMAGE PANEL ── -->
+      <div class="panel active" id="panel-image">
+        <div class="page-header">
+          <div class="page-title">Image Detection</div>
+          <div class="page-desc">Upload an image to run helmet detection inference.</div>
+        </div>
+        <div class="card">
+          <div class="param-row">
+            <div class="param-item">
+              <span class="param-label">conf</span>
+              <input type="range" id="img-conf" min="5" max="95" value="25"
+                oninput="document.getElementById('img-conf-v').textContent=(this.value/100).toFixed(2)">
+              <span class="param-val" id="img-conf-v">0.25</span>
+            </div>
+            <div class="param-item">
+              <span class="param-label">iou</span>
+              <input type="range" id="img-iou" min="5" max="95" value="45"
+                oninput="document.getElementById('img-iou-v').textContent=(this.value/100).toFixed(2)">
+              <span class="param-val" id="img-iou-v">0.45</span>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="drop-zone" id="drop-zone" onclick="document.getElementById('img-file').click()"
+              ondragover="event.preventDefault();this.classList.add('drag')" ondragleave="this.classList.remove('drag')"
+              ondrop="handleDrop(event)">
+              <input type="file" id="img-file" accept="image/*" multiple onchange="previewImage(this)">
+              <div class="drop-icon"><i data-lucide="upload-cloud"></i></div>
+              <div class="drop-text"><strong>Click to upload</strong> or drag and drop</div>
+              <div class="drop-text" style="margin-top:4px">PNG, JPG, WEBP</div>
+            </div>
+            <div class="btn-row">
+              <button class="btn btn-primary btn-full" id="img-btn" onclick="detectImage()" disabled>
+                Run detection
+              </button>
+              <button class="btn btn-danger" onclick="clearQueue()" id="btn-clear" title="Clear all">
+                <i data-lucide="trash-2" style="width:14px;height:14px"></i>
+              </button>
+            </div>
+            <div class="preview-wrap" id="img-preview" style="display:none"></div>
+            <div class="stats-row" id="img-stats"></div>
+            <div id="img-detections"></div>
+
+            <!-- BATCH GALLERY -->
+            <div id="img-batch-wrap"
+              style="display:none; margin-top:24px; border-top:1px solid var(--border); padding-top:20px;">
+              <div class="sidebar-label" style="padding:0; margin-bottom:12px;">Batch Results</div>
+              <div id="img-batch-list" class="batch-grid"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── URL PANEL ── -->
+      <div class="panel" id="panel-url">
+        <div class="page-header">
+          <div class="page-title">URL Detection</div>
+          <div class="page-desc">Provide a direct image URL for remote inference.</div>
+        </div>
+        <div class="card">
+          <div class="param-row">
+            <div class="param-item">
+              <span class="param-label">conf</span>
+              <input type="range" id="url-conf" min="5" max="95" value="25"
+                oninput="document.getElementById('url-conf-v').textContent=(this.value/100).toFixed(2)">
+              <span class="param-val" id="url-conf-v">0.25</span>
+            </div>
+          </div>
+          <div class="card-body">
+            <input class="url-input" type="url" id="img-url" placeholder="https://example.com/image.jpg">
+            <div class="btn-row">
+              <button class="btn btn-primary btn-full" id="url-btn" onclick="detectUrl()">Run detection</button>
+            </div>
+            <div class="preview-wrap" id="url-preview" style="display:none"></div>
+            <div class="stats-row" id="url-stats"></div>
+            <div id="url-detections"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── VIDEO PANEL ── -->
+      <div class="panel" id="panel-video">
+      <div class="page-header">
+        <div class="page-title">Video AI Player</div>
+        <div class="page-desc">Play a video and see AI detections overlaid in real-time.</div>
+      </div>
+      <div class="card">
+        <div class="param-row">
+          <div class="param-item">
+            <span class="param-label">conf</span>
+            <input type="range" id="vid-conf" min="5" max="95" value="25"
+              oninput="document.getElementById('vid-conf-v').textContent=(this.value/100).toFixed(2)">
+            <span class="param-val" id="vid-conf-v">0.25</span>
+          </div>
+          <div class="param-item">
+            <span class="param-label">playback speed</span>
+            <select id="vid-speed" class="url-input" style="width:80px; height:28px; padding:0 8px; font-size:11px;" onchange="document.getElementById('vid-player').playbackRate = this.value">
+              <option value="0.5">0.5x</option>
+              <option value="1" selected>1.0x</option>
+              <option value="1.5">1.5x</option>
+              <option value="2">2.0x</option>
+              <option value="5">5.0x</option>
+            </select>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="drop-zone" id="vid-drop-zone" onclick="document.getElementById('vid-file').click()">
+            <input type="file" id="vid-file" accept="video/*" onchange="loadVideoIntoPlayer(this)">
+            <div class="drop-icon"><i data-lucide="video"></i></div>
+            <div class="drop-text"><strong>Click to load video</strong> or drag and drop</div>
+          </div>
+
+          <div class="preview-wrap" id="vid-preview-wrap" style="display:none; margin-top:20px; background:#000; border-radius:12px; overflow:hidden; border:1px solid var(--border);">
+            <div style="position:relative; width:100%; aspect-ratio:16/9; background:#000;">
+              <video id="vid-player" style="width:100%; height:100%; object-fit:contain; display:block;"></video>
+              <canvas id="vid-overlay" style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;"></canvas>
+              
+              <div class="vid-controls" id="vid-custom-controls">
+                <button class="vid-btn-icon" id="vid-play-pause" onclick="toggleVidPlay()">
+                  <i data-lucide="play" id="vid-play-icon"></i>
+                </button>
+                <div class="vid-progress-container" onclick="seekVid(event)">
+                  <div class="vid-progress-bg">
+                    <div class="vid-progress-bar" id="vid-progress"></div>
+                  </div>
+                </div>
+                <span class="vid-time" id="vid-time-display">00:00 / 00:00</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="stats-row" id="vid-stats" style="margin-top:12px"></div>
+          <div id="vid-detections"></div>
+        </div>
+      </div>
+    </div>
+
+      <!-- ── WEBCAM PANEL ── -->
+      <div class="panel" id="panel-webcam">
+        <div class="page-header">
+          <div>
+            <div class="page-title">Live Webcam</div>
+            <div class="page-desc">Real-time detection via WebSocket stream.</div>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-primary" id="cam-start-btn" onclick="startWebcam()">
+              <i data-lucide="play"></i> Start webcam
+            </button>
+            <button class="btn btn-danger" id="cam-stop-btn" onclick="stopWebcam()" style="display:none">
+              <i data-lucide="square"></i> Stop
+            </button>
+          </div>
+        </div>
+
+        <div class="cam-container">
+          <div class="cam-view-wrap">
+            <div id="cam-preview" class="cam-preview">
+              <div class="cam-placeholder">
+                <i data-lucide="camera-off" style="width:48px;height:48px;opacity:0.2"></i>
+                <p style="font-size:12px; margin-top:12px; color:var(--muted)">Stream Offline</p>
+              </div>
+            </div>
+            <div class="cam-overlay">
+              <div class="cam-scanline"></div>
+              <div class="cam-corner tl"></div>
+              <div class="cam-corner tr"></div>
+              <div class="cam-corner bl"></div>
+              <div class="cam-corner br"></div>
+              <div class="cam-stats-overlay" id="cam-stats"></div>
+            </div>
+          </div>
+          <div id="cam-detections" class="cam-side-list"></div>
+        </div>
+
+        <div class="card" style="margin-top:20px">
+          <div class="param-row">
+            <div class="param-item">
+              <span class="param-label">conf</span>
+              <input type="range" id="cam-conf" min="5" max="95" value="25"
+                oninput="document.getElementById('cam-conf-v').textContent=(this.value/100).toFixed(2)">
+              <span class="param-val" id="cam-conf-v">0.25</span>
+            </div>
+            <div class="param-item">
+              <span class="param-label">fps</span>
+              <input type="range" id="cam-fps" min="1" max="15" value="5"
+                oninput="document.getElementById('cam-fps-v').textContent=this.value">
+              <span class="param-val" id="cam-fps-v">5</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <video id="webcam-video" style="position:fixed; opacity:0; pointer-events:none; width:1px; height:1px; top:0; left:0;"
+    autoplay muted playsinline></video>
+  <canvas id="cam-canvas" style="display:none"></canvas>
+
+  <script src="js/main.js"></script>
+  <script>
+    lucide.createIcons();
+  </script>
+</body>
+
+</html>

@@ -19,6 +19,21 @@ Un système complet de détection d'équipements de protection individuelle (Cas
 
 ---
 
+## 🖥️ Interface Utilisateur
+
+L'application web offre une interface intuitive pour la détection sur divers médias :
+
+**Détection sur Flux Vidéo (Live / Fichier)**
+![Live Video Detection](parti3-img/video-live-detection.png)
+
+**Détection sur Image (Casque Détecté)**
+![Image with Helmet](parti3-img/salif-image-withhelemt.png)
+
+**Détection sur Image (Pas de Casque Détecté)**
+![Image without Helmet](parti3-img/salif-imagewithout-helmet.png)
+
+---
+
 ## 🛠️ Architecture Technique
 
 - **Modèle** : YOLOv8n (Ultralytics) fine-tuné sur un dataset spécifique de casques de chantier.
@@ -70,4 +85,4 @@ Un système complet de détection d'équipements de protection individuelle (Cas
 ## 🎓 Projet Académique
 Ce projet a été réalisé dans le cadre du module **Computer Vision & Deep Learning** au sein du **DIC3 Informatique & Télécommunications** — **ESP/UCAD**.
 
-**Auteurs** : Salif Biaye & Ndeye Astou Diagouraga
+**Auteurs** : Salif Biaye, Ndeye Astou Diagouraga & Moussa Ndoye

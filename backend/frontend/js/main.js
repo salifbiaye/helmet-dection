@@ -637,6 +637,24 @@ function loadVideoIntoPlayer(input) {
   player.ontimeupdate = updateVidProgress;
 }
 
+function removeVideo() {
+  stopVidAI();
+  const player = document.getElementById('vid-player');
+  const wrap = document.getElementById('vid-preview-wrap');
+  const drop = document.getElementById('vid-drop-zone');
+  const fileInput = document.getElementById('vid-file');
+
+  player.pause();
+  player.src = "";
+  fileInput.value = "";
+  wrap.style.display = 'none';
+  drop.style.display = 'flex';
+  
+  // Clear any stats/detections
+  document.getElementById('vid-stats').innerHTML = '';
+  document.getElementById('vid-detections').innerHTML = '';
+}
+
 /** Keep the canvas pixel-size in sync with the video element's rendered size */
 function syncOverlaySize() {
   const player = document.getElementById('vid-player');

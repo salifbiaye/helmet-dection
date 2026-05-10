@@ -9,7 +9,7 @@ services:
     volumes:
       - ./backend/models:/app/models
     environment:
-      - MODEL_PATH=/app/models/helmet_model_best.pt
+      - MODEL_PATH=/app/models/helmet_model_best.onnx
     restart: unless-stopped
     healthcheck:
       test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" ]

@@ -611,12 +611,17 @@ async function detectUrl() {
 let vidWS = null;
 let vidInterval = null;
 let vidRunning = false;
+let vidPending = false;
+let vidObjectUrl = null;
+let vidFrameSize = null;
 
 function loadVideoIntoPlayer(input) {
   const file = input.files[0];
   if (!file) return;
 
+  if (vidObjectUrl) URL.revokeObjectURL(vidObjectUrl);
   const url = URL.createObjectURL(file);
+  vidObjectUrl = url;
   const player = document.getElementById('vid-player');
   const wrap = document.getElementById('vid-preview-wrap');
   const drop = document.getElementById('vid-drop-zone');
@@ -643,12 +648,25 @@ function removeVideo() {
   const wrap = document.getElementById('vid-preview-wrap');
   const drop = document.getElementById('vid-drop-zone');
   const fileInput = document.getElementById('vid-file');
+  const progress = document.getElementById('vid-progress');
+  const timeDisp = document.getElementById('vid-time-display');
+  const overlay = document.getElementById('vid-overlay');
 
   player.pause();
-  player.src = "";
+  player.removeAttribute('src');
+  player.load();
+  if (vidObjectUrl) {
+    URL.revokeObjectURL(vidObjectUrl);
+    vidObjectUrl = null;
+  }
   fileInput.value = "";
   wrap.style.display = 'none';
   drop.style.display = 'flex';
+  if (progress) progress.style.width = '0%';
+  if (timeDisp) timeDisp.textContent = '00:00 / 00:00';
+  if (overlay) overlay.getContext('2d').clearRect(0, 0, overlay.width, overlay.height);
+  vidFrameSize = null;
+  updateVidIcons(false);
   
   // Clear any stats/detections
   document.getElementById('vid-stats').innerHTML = '';
@@ -704,11 +722,12 @@ function startVidAI() {
 
   vidWS.onopen = () => {
     console.log('Video WS connected');
-    // Send frames at ~10 fps (every 100 ms)
-    vidInterval = setInterval(() => syncVidFrame(false), 100);
+    // Production-friendly cadence: one in-flight frame max, no WS backlog.
+    vidInterval = setInterval(() => syncVidFrame(false), 180);
   };
 
   vidWS.onmessage = e => {
+    vidPending = false;
     const data = JSON.parse(e.data);
     drawVidOverlay(data);
 
@@ -725,8 +744,8 @@ function startVidAI() {
     if (data.detections) renderDetections('vid', data.detections);
   };
 
-  vidWS.onerror = err => console.error('Video WS error', err);
-  vidWS.onclose = () => { vidRunning = false; };
+  vidWS.onerror = err => { vidPending = false; console.error('Video WS error', err); };
+  vidWS.onclose = () => { vidPending = false; vidRunning = false; };
 }
 
 function stopVidAI() {
@@ -734,6 +753,7 @@ function stopVidAI() {
   vidInterval = null;
   if (vidWS) { vidWS.close(); vidWS = null; }
   vidRunning = false;
+  vidPending = false;
 
   // Clear overlay
   const canvas = document.getElementById('vid-overlay');
@@ -748,14 +768,19 @@ function syncVidFrame(force = false) {
   if (!video || !video.videoWidth) return;
   if (!force && (video.paused || video.ended)) return;
   if (!vidWS || vidWS.readyState !== WebSocket.OPEN) return;
+  if (vidPending) return;
 
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
-  canvas.getContext('2d').drawImage(video, 0, 0);
+  const maxSide = 640;
+  const scale = Math.min(1, maxSide / Math.max(video.videoWidth, video.videoHeight));
+  canvas.width = Math.round(video.videoWidth * scale);
+  canvas.height = Math.round(video.videoHeight * scale);
+  canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+  vidFrameSize = { width: canvas.width, height: canvas.height };
 
   const conf = document.getElementById('vid-conf').value / 100;
-  const b64 = canvas.toDataURL('image/jpeg', 0.6).split(',')[1];
-  vidWS.send(JSON.stringify({ image: b64, conf }));
+  const b64 = canvas.toDataURL('image/jpeg', 0.55).split(',')[1];
+  vidPending = true;
+  vidWS.send(JSON.stringify({ image: b64, conf, include_image: false }));
 }
 
 /**
@@ -767,10 +792,13 @@ function drawVidOverlay(data) {
   const canvas = document.getElementById('vid-overlay');
   if (!video || !video.videoWidth) return;
 
-  // Keep canvas resolution in sync
-  if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+  const frameWidth = vidFrameSize?.width || video.videoWidth;
+  const frameHeight = vidFrameSize?.height || video.videoHeight;
+
+  // Keep overlay resolution aligned with the frame sent to the backend.
+  if (canvas.width !== frameWidth || canvas.height !== frameHeight) {
+    canvas.width = frameWidth;
+    canvas.height = frameHeight;
   }
 
   const ctx = canvas.getContext('2d');
@@ -805,7 +833,7 @@ function drawVidOverlay(data) {
 }
 
 // ── WEBCAM ───────────────────────────────────────────────────────────────────
-let ws = null, camStream = null, camInterval = null;
+let ws = null, camStream = null, camInterval = null, camPending = false;
 
 async function startWebcam() {
   try {
@@ -835,6 +863,7 @@ async function startWebcam() {
   };
 
   ws.onmessage = e => {
+    camPending = false;
     const data = JSON.parse(e.data);
     const preview = document.getElementById('cam-preview');
 
@@ -861,8 +890,9 @@ async function startWebcam() {
     if (data.detections) renderDetections('cam', data.detections);
   };
 
-  ws.onerror = err => { console.error('WebSocket error:', err); alert('WebSocket connection failed.'); stopWebcam(); };
+  ws.onerror = err => { camPending = false; console.error('WebSocket error:', err); alert('WebSocket connection failed.'); stopWebcam(); };
   ws.onclose = () => {
+    camPending = false;
     const dot = document.getElementById('ws-dot');
     const lbl = document.getElementById('ws-label');
     if (dot) dot.style.background = '#f87171';
@@ -877,17 +907,24 @@ function sendFrame() {
   const video = document.getElementById('webcam-video');
   const canvas = document.getElementById('cam-canvas');
   if (!video || !video.videoWidth) return;
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
-  canvas.getContext('2d').drawImage(video, 0, 0);
+  if (camPending) return;
+  const maxSide = 640;
+  const scale = Math.min(1, maxSide / Math.max(video.videoWidth, video.videoHeight));
+  canvas.width = Math.round(video.videoWidth * scale);
+  canvas.height = Math.round(video.videoHeight * scale);
+  canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
   const conf = document.getElementById('cam-conf').value / 100;
-  const b64 = canvas.toDataURL('image/jpeg', 0.6).split(',')[1];
-  if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ image: b64, conf }));
+  const b64 = canvas.toDataURL('image/jpeg', 0.55).split(',')[1];
+  if (ws?.readyState === WebSocket.OPEN) {
+    camPending = true;
+    ws.send(JSON.stringify({ image: b64, conf, include_image: true }));
+  }
 }
 
 function stopWebcam() {
   clearInterval(camInterval);
   if (ws) ws.close();
+  camPending = false;
   if (camStream) camStream.getTracks().forEach(t => t.stop());
   const video = document.getElementById('webcam-video');
   video.srcObject = null;
@@ -895,5 +932,15 @@ function stopWebcam() {
   document.getElementById('cam-start-btn').style.display = 'inline-flex';
   document.getElementById('cam-stop-btn').style.display = 'none';
 }
+
+// Expose handlers used by inline HTML attributes in production browsers.
+Object.assign(window, {
+  loadVideoIntoPlayer,
+  removeVideo,
+  toggleVidPlay,
+  seekVid,
+  startWebcam,
+  stopWebcam,
+});
 
 applyTranslations();

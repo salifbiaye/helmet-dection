@@ -200,7 +200,7 @@
                   </div>
                 </div>
                 <span class="vid-time" id="vid-time-display">00:00 / 00:00</span>
-                <button class="btn btn-danger" onclick="removeVideo()" style="padding:4px 8px; font-size:10px; margin-left:8px; height:26px;">
+                <button type="button" class="btn btn-danger" onclick="event.stopPropagation(); window.removeVideo()" title="Remove video" style="padding:4px 8px; font-size:10px; margin-left:8px; height:26px;">
                   <i data-lucide="x" style="width:12px;height:12px"></i>
                 </button>
               </div>
@@ -275,7 +275,7 @@
     autoplay muted playsinline></video>
   <canvas id="cam-canvas" style="display:none"></canvas>
 
-  <script src="js/main.js"></script>
+  <script src="js/main.js?v=20260510-2"></script>
   <script>
     lucide.createIcons();
   </script>

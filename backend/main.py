@@ -35,15 +35,16 @@ app.add_middleware(
 class ObjectDetector:
     def __init__(self, model_path: str = "models/helmet_model_best.pt"):
         self.model = YOLO(model_path)
-        # Optimisation pour CPU : fusion des couches du modèle
-        try:
-            self.model.fuse()
-        except Exception:
-            pass
+        if Path(model_path).suffix.lower() == ".pt":
+            # Optimisation CPU uniquement pour le modèle PyTorch.
+            try:
+                self.model.fuse()
+            except Exception:
+                pass
         self.classes = self.model.names
         print(f"✅ Modèle chargé et optimisé : {model_path} ({len(self.classes)} classes)")
 
-    def _run(self, image: Image.Image, conf: float, iou: float) -> dict:
+    def _run(self, image: Image.Image, conf: float, iou: float, include_image: bool = True) -> dict:
         start = time.time()
         
         # Optimisation : redimensionnement à 640px max pour accélérer l'inférence CPU
@@ -63,16 +64,19 @@ class ObjectDetector:
             for box in results.boxes
         ]
 
-        annotated = results.plot()
-        buf = io.BytesIO()
-        Image.fromarray(annotated[:, :, ::-1]).save(buf, format="JPEG", quality=85)
-        img_b64 = base64.b64encode(buf.getvalue()).decode()
-
-        return {"detections": detections, "count": len(detections),
-                "inference_time_ms": ms, "annotated_image": img_b64}
+        response = {"detections": detections, "count": len(detections), "inference_time_ms": ms}
+        if include_image:
+            annotated = results.plot()
+            buf = io.BytesIO()
+            Image.fromarray(annotated[:, :, ::-1]).save(buf, format="JPEG", quality=75)
+            response["annotated_image"] = base64.b64encode(buf.getvalue()).decode()
+        return response
 
     def detect_image(self, image: Image.Image, conf=0.25, iou=0.45) -> dict:
         return self._run(image, conf, iou)
+
+    def detect_stream_image(self, image: Image.Image, conf=0.25, iou=0.45, include_image=False) -> dict:
+        return self._run(image, conf, iou, include_image=include_image)
 
     def detect_frame(self, frame_bgr: np.ndarray, conf=0.25, iou=0.45) -> dict:
         img = Image.fromarray(cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB))
@@ -85,9 +89,18 @@ detector: ObjectDetector | None = None
 @app.on_event("startup")
 async def startup():
     global detector
-    # Priorité absolue au modèle de casque spécialisé
-    paths = ["models/helmet_model_best.pt", "models/best.pt", "yolov8n.pt"]
+    configured_model = os.getenv("MODEL_PATH")
+    # Priorité au modèle configuré par Docker, puis fallback local.
+    paths = [
+        configured_model,
+        "models/helmet_model_best.onnx",
+        "models/helmet_model_best.pt",
+        "models/best.pt",
+        "yolov8n.pt",
+    ]
     for path in paths:
+        if not path:
+            continue
         try:
             detector = ObjectDetector(path)
             break
@@ -230,9 +243,10 @@ async def websocket_detect(ws: WebSocket):
             payload = await ws.receive_json()
             b64    = payload.get("image", "")
             conf   = float(payload.get("conf", 0.25))
+            include_image = bool(payload.get("include_image", False))
             img_bytes = base64.b64decode(b64)
             img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
-            result = detector.detect_image(img, conf)
+            result = detector.detect_stream_image(img, conf, include_image=include_image)
             await ws.send_json(result)
     except WebSocketDisconnect:
         pass
